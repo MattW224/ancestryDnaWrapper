@@ -1,6 +1,7 @@
 from collections import defaultdict
 import json
 import requests
+import browser_cookie3
 
 DEFAULT_ENDPOINT = "https://www.ancestry.com"
 
@@ -29,31 +30,26 @@ VALID_DNA_SORTS = {"DATE", "RELATIONSHIP"}
 
 
 class ancestryDnaWrapper:
-    def __init__(self, username, password, endpoint=DEFAULT_ENDPOINT):
+    def __init__(self, endpoint=DEFAULT_ENDPOINT):
         self._endpoint = endpoint
-        self._session = self._authenticate(username, password, endpoint)
+        self._session = self._authenticate(endpoint)
 
         self._matches_service = f"{endpoint}/discoveryui-matchesservice/api"
 
-    def _authenticate(self, username, password, endpoint):
-        credentials = json.dumps({"password": password, "username": username})
+    def _authenticate(self, endpoint):
         AUTH_HEADERS = {
             "Content-Type": "application/json",
-            "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                            "AppleWebKit/537.36 (KHTML, like Gecko) "
-                            "Chrome/97.0.4692.99 Safari/537.36")
+            # If get_dna_matches breaks, update this with value from web browser.
+            "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"),
         }
 
         session = requests.session()
+        # Inherit current authentication. Reverse engineering authentication is difficult --
+        # tokens coming from ambiguous areas in /preauthenticate and /authenticate calls.
+        session.cookies.update(browser_cookie3.chrome())
         session.headers.update(AUTH_HEADERS)
 
-        response = session.post(
-            f'{endpoint}/account/signin/frame/authenticate',
-            data=credentials
-        )
-
-        if response.status_code == 200:
-            return session
+        return session
 
     def _web_request(self, method, url, payload=None, query_string=None):
         web_request = getattr(self._session, method)
