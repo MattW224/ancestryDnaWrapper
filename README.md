@@ -8,7 +8,11 @@ Many DNA function calls require you to obtain and input GUIDs corresponding to t
 This wrapper assumes intermediate knowledge of Python -- for example, being able to read the `ancestryDnaWrapper` class definition, and knowing to input the username and password values to authenticate successfully. 
 
 ## Authentication
-Initializing the `ancestryDnaWrapper` class will automatically perform authentication. It will authenticate the US-based endpoint by default. This can be overrided with the `endpoint` keyword argument.
+This wrapper pulls browser cookies for authentication using [browser_cookie3](https://github.com/borisbabic/browser_cookie3). It defaults to Google Chrome (Ctrl-F "chrome" in `core.py`), but should be changed to a browser you rarely use. The browser selected needs to be closed, so this program can access its cookies. Most (all?) browsers create a file lock on cookies while running.
+
+Login to Ancestry on that browser of choice, and this wrapper will inherit the authentication cookie. This is a one-time requirement. However, if you encounter issues, ensure the browser is still logged in. Although Ancestry has authentication endpoints (`ancestry.com/account/signin/api/pre-authenticate` and `ancestry.com/account/signin/api/authenticate`), I could not get it functional here.
+
+It will authenticate the US-based endpoint by default. This can be overrided with the `endpoint` keyword argument.
 
 ## Selecting tests
 Any of the group, star, and test require a test to be selected. The wrapper will not default to anything.
@@ -17,8 +21,8 @@ Any of the group, star, and test require a test to be selected. The wrapper will
 * `use_test` -- every object returned from `get_tests` will include a `guid` property. That property must be inputted to use any latter options. Like the Ancestry UI, you cannot select more than one test.
 
 ## Test operations
-* `get_dna_matches` -- This will return **all** DNA matches. Every DNA match will contain a `testGuid` attribute. The method also contains a `shared_with_test_id` attribute. To obtain shared matches, input `testGuid` there.
-* `get_admixture`-- This will return your admixture (e.g. 100% Martian). The method also contains a `comparison_guid` attribute. To compare admixture with another user, input their `testGuid` there.
+* `get_dna_matches` -- This will return **all** DNA matches. Every DNA match will contain a `testGuid` attribute. The method also contains a `shared_match_test_id` attribute. To obtain shared matches, input `testGuid` there.
+* `get_admixture`-- This will return your admixture (e.g. 100% Martian). The method also contains a `shared_match_test_id` attribute. To compare admixture with another user, input their `testGuid` there.
 
 ## Group operations
 * `get_custom_groups` -- This will return all custom groups you created. If you do not have any, it will return an empty array. Each object will contain ` tagId` attribute -- required in any `delete` or `modify` operations. 

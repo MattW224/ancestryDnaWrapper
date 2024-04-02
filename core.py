@@ -2,6 +2,7 @@ from collections import defaultdict
 import json
 import requests
 import browser_cookie3
+import sys
 
 DEFAULT_ENDPOINT = "https://www.ancestry.com"
 
@@ -46,7 +47,14 @@ class ancestryDnaWrapper:
         session = requests.session()
         # Inherit current authentication. Reverse engineering authentication is difficult --
         # tokens coming from ambiguous areas in /preauthenticate and /authenticate calls.
-        session.cookies.update(browser_cookie3.chrome())
+        try:
+            browser_cookies = browser_cookie3.chrome()
+        except PermissionError as e:
+            print('Could not access browser cookies. An open browser window probably has a file lock on it. See Troubleshooting section in README.')
+            print('\nRecommend logging into Ancestry on an unused browser (e.g. Edge), and change "browser_cookie3" library to inherit from there.')
+            sys.exit(-1)
+
+        session.cookies.update(browser_cookies)
         session.headers.update(AUTH_HEADERS)
 
         return session
@@ -57,6 +65,7 @@ class ancestryDnaWrapper:
             url,
             data=json.dumps(payload),
             params=query_string)
+        
         return json.loads(response.text)
 
     def _append_matches(self, collated_matches, match_groups):
@@ -81,16 +90,14 @@ class ancestryDnaWrapper:
         filtered_tests = [test for test in tests["data"][test_type]]
         return filtered_tests
 
-    def use_test(self, test_guid):
-        self._current_test = test_guid
+    def use_test(self, test_id):
+        self._current_test = test_id
 
-    def get_admixture(self, comparison_guid=None):
-        if comparison_guid:
-            endpoint = (f"{self._matches_service}/compare/{self._current_test}"
-                        f"/with/{comparison_guid}/ethnicity")
+    def get_admixture(self, shared_match_test_id=None):
+        if shared_match_test_id:
+            endpoint = (f"{self._matches_service}/compare/{self._current_test}/with/{shared_match_test_id}/ethnicity")
         else:
-            endpoint = (f"{self._endpoint}/dna/secure/tests/"
-                        f"{self._current_test}/ethnicity")
+            endpoint = (f"{self._endpoint}/dna/secure/tests/{self._current_test}/ethnicity")
 
         return self._web_request('get', endpoint)
 
@@ -98,12 +105,10 @@ class ancestryDnaWrapper:
     def validate_filters(self, sort_type, filters):
         if sort_type.upper() not in VALID_DNA_SORTS:
             raise ValueError(
-                (f"sort_type value '{sort_type}' not accepted -- "
-                    "must be 'DATE' or 'RELATIONSHIP'."))
+                (f"sort_type value '{sort_type}' not accepted -- must be 'DATE' or 'RELATIONSHIP'."))
 
         selected_filter_types = set(filters.keys())
-        selected_filter_types = selected_filter_types.difference(
-            INCLUSIVE_VALID_DNA_FILTERS)
+        selected_filter_types = selected_filter_types.difference(INCLUSIVE_VALID_DNA_FILTERS)
 
         for valid_filters in EXCLUSIVE_VALID_DNA_FILTERS:
             intersection = selected_filter_types.intersection(valid_filters)
@@ -122,14 +127,13 @@ class ancestryDnaWrapper:
 
         if len(selected_filter_types) > 0:
             raise ValueError(
-                (f"Filters {selected_filter_types} not accepted. "
-                 "See README for valid filter types."))
+                (f"Filters {selected_filter_types} not accepted. See README for valid filter types."))
 
     def get_dna_matches(
             self,
             sort_type="RELATIONSHIP",
             filters={},
-            shared_with_test_id=None):
+            shared_match_test_id=None):
         matches = defaultdict(list)
 
         self.validate_filters(sort_type, filters)
@@ -139,11 +143,10 @@ class ancestryDnaWrapper:
             "sortby": sort_type
         })
 
-        if shared_with_test_id:
-            filters.update({"relationguid": shared_with_test_id})
+        if shared_match_test_id:
+            filters.update({"relationguid": shared_match_test_id})
 
-        endpoint = (f"{self._matches_service}/samples/"
-                    f"{self._current_test}/matches/list")
+        endpoint = (f"{self._matches_service}/samples/{self._current_test}/matches/list")
         result = self._web_request('get', endpoint, query_string=filters)
 
         matches = self._append_matches(matches, result["matchGroups"])
@@ -169,6 +172,14 @@ class ancestryDnaWrapper:
 
         return matches
 
+    def get_common_ancestors(self, shared_match_test_id):
+        endpoint = f"{self._matches_service}/compare/{self._current_test}/with/{shared_match_test_id}/commonancestors/"
+        return self._web_request('get', endpoint)
+
+    def get_tree_data(self, shared_match_test_id):
+        endpoint = f"{self._matches_service}/compare/{self._current_test}/with/{shared_match_test_id}/treedata?generations=10"
+        return self._web_request('get', endpoint)
+
     def get_custom_groups(self):
         endpoint = f"{self._matches_service}/samples/{self._current_test}/tags"
         return self._web_request('get', endpoint)
@@ -182,30 +193,26 @@ class ancestryDnaWrapper:
     def delete_custom_group(self, group_id):
         # Don't ask why these are empty values -- beats me.
         payload = {"removeTagFromAllMatchesResult": "", "deleteTagResult": ""}
-        endpoint = (f"{self._matches_service}/samples/"
-                    f"{self._current_test}/tags/{group_id}")
+        endpoint = (f"{self._matches_service}/samples/{self._current_test}/tags/{group_id}")
 
         return self._web_request('delete', endpoint, payload)
 
-    def modify_group_membership(self, action, group_id, test_id):
+    def modify_group_membership(self, action, group_id, shared_match_test_id):
         action = action.lower().trim()
 
         if action == "add":
-            endpoint = (f"{self._matches_service}/samples/"
-                        f"{self._current_test}/{group_id}")
+            endpoint = (f"{self._matches_service}/samples/{self._current_test}/{group_id}")
         elif action == "remove":
-            endpoint = (f"{self._matches_service}/samples/{self._current_test}"
-                        f"/matches/tags/{group_id}/remove")
+            endpoint = (f"{self._matches_service}/samples/{self._current_test}/matches/tags/{group_id}/remove")
         else:
             raise ValueError(
                 "action value not accepted -- must be 'add' or 'remove'.")
 
-        payload = {"matchSampleIds": [test_id]}
+        payload = {"matchSampleIds": [shared_match_test_id]}
         return self._web_request('post', endpoint, payload)
 
-    def modify_star(self, action, test_id):
-        endpoint = (f"{self._matches_service}/samples/"
-                    f"{self._current_test}/matches/{test_id}")
+    def modify_star(self, action, shared_match_test_id):
+        endpoint = (f"{self._matches_service}/samples/{self._current_test}/matches/{shared_match_test_id}")
         payload = {"starred": True} if action == "add" else {"starred": False}
 
         return self._web_request('post', endpoint, payload)
